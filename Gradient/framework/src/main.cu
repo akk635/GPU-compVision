@@ -23,7 +23,7 @@
 #include "aux.h"
 
 #include <iostream>
-#include "gradientclass.h"
+#include "gradient.cuh"
 using namespace std;
 
 // uncomment to use the camera
@@ -150,13 +150,15 @@ int main(int argc, char **argv) {
 	// So we will convert as necessary, using interleaved "cv::Mat" for loading/saving/displaying, and layered "float*" for CUDA computations
 	convert_mat_to_layered(imgIn, mIn);
 
-	gradient_class test_gradient(imgIn, imgOut, w, h, nc,
-			nc_out);
+/*	gradient_class* test_gradient = new gradient_class(imgIn, imgOut, w, h, nc,
+			nc_out);*/
+	gradient(imgIn, imgOut, w, h, nc, nc_out);
 
-	//3D block
-	test_gradient.create_thread_env(8,8,1);
+	dim3 block = dim3(8, 8, 1);
+	dim3 grid = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
+	get_norm_write(imgOut, grid, block);
 
-	test_gradient.get_gradient_norm(imgOut);
+//	test_gradient->get_gradient_norm(imgOut);
 
 	Timer timer;
 	timer.start();
