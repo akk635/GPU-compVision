@@ -29,6 +29,9 @@ __device__ size_t globalIdx_Z();
 // returns global indexes in three dimensions
 __device__ dim3 globalIdx_Dim3();
 
+// returns the global id of the thread in the block's X-Y plane
+__device__ size_t localIdx_XY();
+
 // returns linear global id depending on width and height of workspace
 __device__ size_t linearize_globalIdx(uint32_t w, uint32_t h);
 

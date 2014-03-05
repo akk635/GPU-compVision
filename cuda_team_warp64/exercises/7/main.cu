@@ -23,57 +23,15 @@
 // ###
 
 
-#include "aux.h"
+#include <aux.h>
 #include <iostream>
 #include <math.h>
-#define PI 3.1412f
 using namespace std;
 
 // uncomment to use the camera
 //#define CAMERA
 
-void gaussian_kernel(float *imgOut, float sigma, int wGaussian, int hGaussian) {
-    float sum = 0.f;
-    size_t ind;   
-    for(int y = (-1)*hGaussian/2; y < hGaussian/2; y++) {
-        for(int x = (-1)*wGaussian/2; x < wGaussian/2; x++) {
-            ind = (x+hGaussian/2) + (size_t) (y+wGaussian/2) * wGaussian;
-            *(imgOut+ind) = (1.0/(2 * PI * sigma * sigma)) * exp(-1.0 *(((size_t) x * x + (size_t) y * y)/(2 * sigma * sigma)));
-            sum += *(imgOut+ind);
-        }
-    } 
-    
-    for(int i = 0; i < wGaussian*hGaussian; i++) {
-        imgOut[i] /= sum;
-    } 
-}
-
-
-// Convolution Kernel
-__global__ void convolution_image(float *d_a, float *d_b, float *d_c, int width, int height, int wGaussian, int hGaussian, int nc) {
-    // get thread id
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-   
-    for(int k = 0; k < nc; k++)
-    {
-        float value = 0.f;
-        int indConvolution = x + y * width + k * width * height;  
-        for(int filterY = 0; filterY < hGaussian; filterY++)
-        {
-            for(int filterX = 0; filterX < wGaussian; filterX++)
-            {
-                int imageX = (x - wGaussian / 2 + filterX + width) % width; 
-                int imageY = (y - hGaussian / 2 + filterY + height) % height; 
-                int ind = imageX + imageY * width + k * width * height;                        
-                int indGaussian = filterX + filterY * wGaussian;
-                value += d_a[ind] * d_b[indGaussian];
-                            
-            }
-        }
-        d_c[indConvolution] = value;  
-    }  
-}
+#include "convolution.h"
 
 
 
@@ -154,7 +112,7 @@ int main(int argc, char **argv)
 
 
 
-    // Set the output image format
+    // Set the kernel params
     float sigma = 2.f;
     int rad = ceil(3*sigma);
     int wGaussian = 2*rad + 1;
@@ -164,9 +122,8 @@ int main(int argc, char **argv)
     
     //cv::Mat mOut(h,w,mIn.type());  // mOut will have the same number of channels as the input image, nc layers
     //cv::Mat mOut(h,w,CV_32FC3);    // mOut will be a color image, 3 layers
-    cv::Mat mOut(hGaussian,wGaussian,CV_32FC1);    // mOut will be a grayscale image, 1 layer
-    cv::Mat mOutGaussian(h,w,mIn.type());  // mOut will have the same number of channels as the input image, nc layers
-    cv::Mat mOutDifference(h,w,mIn.type());  // mOut will have the same number of channels as the input image, nc layers
+    cv::Mat mOutGaussian(hGaussian, wGaussian, CV_32FC1);    // mOut will be a grayscale image, 1 layer
+    cv::Mat mOut(h, w, mIn.type());  // mOut will have the same number of channels as the input image, nc layers
     // ### Define your own output images here as needed
 
 
@@ -179,17 +136,13 @@ int main(int argc, char **argv)
     // output image number of channels: mOut.channels(), as defined above (nc, 3, or 1)
 
     // allocate raw input image array
-    float *imgIn  = new float[(size_t)w*h*nc];
+    float *imgIn  = new float[(size_t)w * h * nc];
 
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut = new float[(size_t)wGaussian*hGaussian*mOut.channels()];
+    float *imgOut = new float[(size_t)w * h * mOut.channels()];
 
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOutGaussian = new float[(size_t)w*h*mOutGaussian.channels()];
-    
-    // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOutDifference = new float[(size_t)w*h*mOutDifference.channels()];
-
+    float *imgOutGaussian = new float[(size_t)wGaussian * hGaussian * mOutGaussian.channels()];
 
 
 
@@ -218,74 +171,25 @@ int main(int argc, char **argv)
 
     Timer timer; timer.start();
 
-    // CPU version 
-    gaussian_kernel(imgOut, sigma, wGaussian, hGaussian);
-    
     // GPU version 
-    int n = w*h;
-    float *h_a = imgIn;
-    float *h_b = imgOut;
-    float *h_c = imgOutGaussian;
-        
-    // define block and grid sizes - 1D assumed
-    // setting a block of 16 * 16 threads
-    dim3 block = dim3(16, 16, 1);
-    dim3 gridConvolution = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
-    //dim3 gridGaussian = dim3((wGaussian + block.x - 1) / block.x, (hGaussian + block.y - 1) / block.y, 1);
-    
-    // alloc GPU memeory and copy data
-    float *d_a;
-    cudaMalloc((void **) &d_a, n * nc * sizeof(float));
-    cudaMemcpy(d_a, h_a, n * nc * sizeof(float), cudaMemcpyHostToDevice);    
-    
-    float *d_b;
-    cudaMalloc((void **) &d_b, wGaussian * hGaussian * sizeof(float));
-    cudaMemcpy(d_b, h_b, wGaussian * hGaussian * sizeof(float), cudaMemcpyHostToDevice);
-    
-    float *d_c;
-    cudaMalloc((void **) &d_c, n * nc * sizeof(float));
-    cudaMemcpy(d_c, h_c, n * nc * sizeof(float), cudaMemcpyHostToDevice);
-    
-    // call kernel
-    convolution_image<<<gridConvolution, block>>>(d_a, d_b, d_c, w, h, wGaussian, hGaussian, nc);
-    
-    // wait for kernel call to finish
-    cudaDeviceSynchronize();
-    
-    // check for error
-    cudaGetLastError();
-    
-    // copy back data
-    cudaMemcpy(h_c, d_c, n * nc * sizeof(float), cudaMemcpyDeviceToHost); 
-    
-    // free GPU array
-    cudaFree(d_a);
-    cudaFree(d_b); 
-    cudaFree(d_c);
-    
-    for(int i = 0; i < w * h * nc; i++)
-    imgOutDifference[i] = abs(imgIn[i] - imgOutGaussian[i]);       
-        
-    
+    gaussian_convolve_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian, sigma);
+
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "time: " << t*1000 << " ms" << endl;
 
     // show input image
     showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
 
+    // ### Display your own output images here as needed
     // show output image: first convert to interleaved opencv format from the layered raw array    
     convert_layered_to_mat(mOut, imgOut);
-    showImage("Output", mOut, 100+w+40, 100);         
+    showImage("Convolution", mOut, 100+w+40, 100);
     
     // show output image: first convert to interleaved opencv format from the layered raw array    
     convert_layered_to_mat(mOutGaussian, imgOutGaussian);
-    showImage("Convolution", mOutGaussian, 100+w+200, 100);
+    showImage("Gaussian", mOutGaussian, 100+w+200, 100);
     
-    // show output image: first convert to interleaved opencv format from the layered raw array    
-    convert_layered_to_mat(mOutDifference, imgOutDifference);
-    showImage("Difference", mOutDifference, 100+3*w+120, 100);
 
-    // ### Display your own output images here as needed
 
 #ifdef CAMERA
     // end of camera loop
@@ -299,9 +203,8 @@ int main(int argc, char **argv)
 
 
     // save input and result
-    cv::imwrite("image_result.png",mOutGaussian*255.f);
-    cv::imwrite("image_difference.png",mOutDifference*255.f);
-    cv::imwrite("image_gaussian_kernel.png",mOut*255.f);
+    cv::imwrite("image_result.png",mOut * 255.f);
+    cv::imwrite("image_gaussian_kernel.png",mOutGaussian * 255.f);
 
     // free allocated arrays
     delete[] imgIn;

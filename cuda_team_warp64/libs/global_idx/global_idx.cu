@@ -31,6 +31,11 @@ __device__ dim3 globalIdx_Dim3() {
 }
 
 
+__device__ size_t localIdx_XY() {
+	return threadIdx.x + (size_t) threadIdx.y * blockDim.x;
+}
+
+
 __device__ size_t linearize_globalIdx(uint32_t w, uint32_t h) {
  	// find global index of thread
  	dim3 globalIdx = globalIdx_Dim3();
