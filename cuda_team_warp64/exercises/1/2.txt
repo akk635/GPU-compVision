@@ -1,0 +1,5 @@
+$ deviceQuery
+
+(a) CUDA Capability Major/Minor version number:    1.2
+(b) ( 2) Multiprocessors, (  8) CUDA Cores/MP:     16 CUDA Cores
+(c) Total amount of global memory:                 511 MBytes (536150016 bytes)

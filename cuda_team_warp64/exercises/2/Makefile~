@@ -1,0 +1,16 @@
+CPPFLAGS = -c
+NVCCFLAGS = --ptxas-options=-v --compiler-options -Wall
+
+# compilers
+NVCC = nvcc
+
+###################### main
+all: square_array
+
+###################### square array
+square_array: square_array.cu
+	$(NVCC) -o square_array square_array.cu $(NVCCFLAGS)
+
+####################### clean
+clean:
+	rm square_array

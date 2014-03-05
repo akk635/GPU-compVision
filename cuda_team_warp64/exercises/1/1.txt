@@ -1,0 +1,5 @@
+$ nvcc --version
+
+  Cuda compilation tools, release 5.0, V0.2.1221
+
+
