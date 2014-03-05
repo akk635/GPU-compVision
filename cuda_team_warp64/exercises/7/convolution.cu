@@ -6,14 +6,14 @@
 
 
 __global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, uint32_t w, uint32_t h, uint32_t nc, uint32_t wKernel, uint32_t hKernel, uint32_t nc) {
-    // get thread global id in 3D
+    // get thread global id in 2D
     dim3 globalIdx = globalIdx_Dim3();
 
     // declare shared memory to store neighbour pixels for the block
     extern __shared__ float imgBlock[];
 
-	// only threads inside image dimensions compute   
-    if(globalIdx.x < w && globalIdx.y < h && globalIdx.z < nc) {
+	// only threads inside image dimensions computes (channels exclusive)
+    if(globalIdx.x < w && globalIdx.y < h) {
     	// linearize globalIdx
     	size_t globalId = linearize_globalIdx();
 
@@ -21,29 +21,41 @@ __global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, ui
     	dim3 offset = dim3(wKernel / 2, hKernel / 2, 0);
 
     	// theadIdx shifted by offset and linearized
-    	dim3 idShifted3D = dim3(offset.x + threadIdx.x, offset.y + threadIdx.y, theadIdx.z);
-    	size_t idShifted = linearize_coords(idShifted3D, dim3(blockDim.x + wKernel, blockDim.y + hKernel, 0));
+    	dim3 shiftedId2D = dim3(offset.x + threadIdx.x, offset.y + threadIdx.y, 0);
+    	size_t shiftedId = linearize_coords(shiftedId2D, dim3(blockDim.x + wKernel, blockDim.y + hKernel, 0));
 
-    	// copy pixel to shared memory
-    	imgBlock[idShifted] = d_imgIn[globalId];
+    	// offset for channel
+    	size_t chOffset = w * h;
 
-    	// corner clamping
-    	if(((threadIdx.x == blockDim.x - 1) || (threadIdx.x == 0)) && ((threadIdx.y == blockDim.y - 1) || (threadIdx.y == 0))) {
-    		// booleans if on x edge
-    		int onEdge_x = (threadIdx.x == blockDim.x - 1) || (threadIdx.x == 0);
-    		int onEdge_y = (threadIdx.y == blockDim.y - 1) || (threadIdx.y == 0);
+    	// for each channel
+    	for(uint32_t ch_i; ch_i < nc; ch_i++) {
+    		// current pixel on the image to be copied
+    		size_t pixel = globalId;
 
-    		// direction to go depending on which sides being clamped
-    		int directn_x = threadIdx.x == blockDim.x - 1 ? 1 : -1;
-    		int directn_y = threadIdx.y == blockDim.y - 1 ? 1 : -1;
+	    	// copy pixel to shared memory
+    		imgBlock[shiftedId] = d_imgIn[globalId + chOffset * ch_i];
 
-    		for(uint32_t w_i = 1; w_i <= onEdge_x * wKernel / 2; w_i++) {
-    			for(uint32_t h_i = 1; h_i <= onEdge_y * hKernel / 2; h_i++) {
-    				idShifted3D = dim3(offset.x + threadIdx.x + directn_x * w_i, offset.y + threadIdx.y + directn_y * h_i, theadIdx.z);
-	 			   	idShifted = linearize_coords(idShifted3D, dim3(blockDim.x + wKernel, blockDim.y + hKernel, 0));
+	    	// border clampings
+    		if(((threadIdx.x == blockDim.x - 1) || (threadIdx.x == 0)) && ((threadIdx.y == blockDim.y - 1) || (threadIdx.y == 0))) {
+    			// booleans if on x edge
+    			int onEdge_x = (threadIdx.x == blockDim.x - 1) || (threadIdx.x == 0);
+    			int onEdge_y = (threadIdx.y == blockDim.y - 1) || (threadIdx.y == 0);
 
-	 				// if not on edge of image
- 			   		if(pixel % (w - 1) != 0 && pixel % w != 0) pixel = linearize_coords(dim3(globalIdx.x + directn * w_i, globalIdx.y, globalIdx.z), dim3(w, h, nc));
+	    		// direction to go depending on which sides being clamped
+    			int directn_x = threadIdx.x == blockDim.x - 1 ? 1 : -1;
+    			int directn_y = threadIdx.y == blockDim.y - 1 ? 1 : -1;
+
+    			for(uint32_t w_i = 1; w_i <= onEdge_x * wKernel / 2; w_i++) {
+    				for(uint32_t h_i = 1; h_i <= onEdge_y * hKernel / 2; h_i++) {
+    					shiftedId2D = dim3(offset.x + threadIdx.x + directn_x * w_i, offset.y + threadIdx.y + directn_y * h_i, 0);
+	 			   		shiftedId = linearize_coords(shiftedId2D, dim3(blockDim.x + wKernel, blockDim.y + hKernel, 0));
+
+		 				// if not on edge of image
+ 				   		if(pixel % (w - 1) != 0 && pixel % w != 0) pixel = linearize_coords(dim3(globalIdx.x + directn * w_i, globalIdx.y, globalIdx.z), dim3(w, h, nc));
+
+ 				   		// copy pixel to shared memory
+					    imgBlock[shiftedId] = d_imgIn[pixel];
+    				}
     			}
     		}
     	}
@@ -57,14 +69,14 @@ __global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, ui
     		int directn = threadIdx.x == blockDim.x - 1 ? 1 : -1;
     		
     		for(uint32_t w_i = 1; w_i <= wKernel / 2; w_i++) {
-    			idShifted3D = dim3(offset.x + threadIdx.x + directn * w_i, offset.y + threadIdx.y, theadIdx.z);
- 			   	idShifted = linearize_coords(idShifted3D, dim3(blockDim.x + wKernel, blockDim.y + hKernel, 0));
+    			shiftedId2D = dim3(offset.x + threadIdx.x + directn * w_i, offset.y + threadIdx.y, theadIdx.z);
+ 			   	shiftedId = linearize_coords(shiftedId2D, dim3(blockDim.x + wKernel, blockDim.y + hKernel, 0));
 
  			   	// if not on edge of image
  			   	if(pixel % (w - 1) != 0 && pixel % w != 0) pixel = linearize_coords(dim3(globalIdx.x + directn * w_i, globalIdx.y, globalIdx.z), dim3(w, h, nc));
 
  			   	// copy pixel to shared memory
-			    imgBlock[idShifted] = d_imgIn[pixel];
+			    imgBlock[shiftedId] = d_imgIn[pixel];
     		}
     	}
 
@@ -77,14 +89,14 @@ __global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, ui
     		int directn = threadIdx.y == blockDim.y - 1 ? 1 : -1;
     		
     		for(uint32_t h_i = 1; h_i <= hKernel / 2; h_i++) {
-    			idShifted3D = dim3(offset.x + threadIdx.x , offset.y + threadIdx.y, theadIdx.z);
- 			   	idShifted = linearize_coords(idShifted3D, dim3(blockDim.x + wKernel, blockDim.y + hKernel + directn * h_i, 0));
+    			shiftedId2D = dim3(offset.x + threadIdx.x , offset.y + threadIdx.y, theadIdx.z);
+ 			   	shiftedId = linearize_coords(shiftedId2D, dim3(blockDim.x + wKernel, blockDim.y + hKernel + directn * h_i, 0));
 
  			   	// if not on edge of image
  			   	if(pixel % (h - 1) != 0 && pixel % h != 0) pixel = linearize_coords(dim3(globalIdx.x, globalIdx.y + directn * h_i, globalIdx.z), dim3(w, h, nc));
 
  			   	// copy pixel to shared memory
-			    imgBlock[idShifted] = d_imgIn[pixel];
+			    imgBlock[shiftedId] = d_imgIn[pixel];
     		}
     	}
 
@@ -117,8 +129,8 @@ __global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, ui
 void convolution_caller(float *h_imgIn, float *h_kernel, float *h_imgOut, uint32_t w, uint32_t h, uint32_t nc, uint32_t wKernel, uint32_t hKernel) {
 	// define dimensions - 3D
 	// NOTE: CC1.x doesn't support 3D grids
-	dim3 block = dim3(8, 8, nc);
-	dim3 grid = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, (nc + block.z - 1) / block.z);
+	dim3 block = dim3(16, 16, 1);
+	dim3 grid = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
 
 	// dyanmically allocate shared memory bytes - NOTE the size > kernel
 	size_t smBytes = (block.x + wKernel) * (block.y + hKernel) * sizeof(float);
