@@ -111,7 +111,7 @@ int main(int argc, char **argv)
 
 
     // gaussian kernel params
-    float sigma = 2.f;
+    float sigma = 6.f;
     uint32_t rad = ceil(3 * sigma);
     uint32_t wGaussian = 2 * rad + 1;
     uint32_t hGaussian = 2 * rad + 1;
@@ -172,7 +172,7 @@ int main(int argc, char **argv)
     Timer timer; timer.start();
 
     // GPU version 
-    gaussian_convolve_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian);
+    gaussian_convolve_dsm_gk_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian);
 
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "time: " << t*1000 << " ms" << endl;
