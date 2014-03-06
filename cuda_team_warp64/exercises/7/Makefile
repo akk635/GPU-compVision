@@ -1,4 +1,3 @@
-CPPFLAGS = -c
 NVCCFLAGS_MAIN = --ptxas-options=-v --use_fast_math --compiler-options -Wall -lopencv_highgui -lopencv_core
 NVCCFLAGS_CONVOLUTION = --ptxas-options=-v --compiler-options -Wall
 
