@@ -3,7 +3,7 @@
 
 // for constant memory kernel (with max radius 20)
 # define MAX_RAD 20
-__constant__ float constKernel[4 * MAX_RAD * MAX_RAD];
+__constant__ float constKernel[4 * (MAX_RAD + 1) * (MAX_RAD + 1)];
 
 // for standard sizes
 #include <stdint.h>
