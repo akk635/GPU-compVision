@@ -110,13 +110,12 @@ int main(int argc, char **argv)
     cout << "image: " << w << " x " << h << endl;
 
 
-
-
-    // Set the kernel params
+    // gaussian kernel params
     float sigma = 2.f;
-    int rad = ceil(3*sigma);
-    int wGaussian = 2*rad + 1;
-    int hGaussian = 2*rad + 1;
+    uint32_t rad = ceil(3 * sigma);
+    uint32_t wGaussian = 2 * rad + 1;
+    uint32_t hGaussian = 2 * rad + 1;
+
 
     cout << "kernel: " << wGaussian << " x " << hGaussian << endl;
     
@@ -167,12 +166,13 @@ int main(int argc, char **argv)
     // So we will convert as necessary, using interleaved "cv::Mat" for loading/saving/displaying, and layered "float*" for CUDA computations
     convert_mat_to_layered (imgIn, mIn);
    
-    
+    // create gaussian using CPU
+    gaussian_kernel(imgOutGaussian, sigma);
 
     Timer timer; timer.start();
 
     // GPU version 
-    gaussian_convolve_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian, sigma);
+    gaussian_convolve_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian);
 
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "time: " << t*1000 << " ms" << endl;

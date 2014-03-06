@@ -1,1 +1,3 @@
-docs/cuda_version.README
+.*
+!/.gitignore
+cuda_team_warp64/docs/*

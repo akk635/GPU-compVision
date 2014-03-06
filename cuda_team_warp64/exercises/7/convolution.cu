@@ -2,36 +2,40 @@
 #include "convolution.h"
 
 #include <aux.h>
-
-// FOR DEBUGGING CALLER
-#include <iostream>
-using namespace std;
+#include <math.h>
 
 // TODO Fix
-// global thread ids lib
+// global thread ids lib source
 #include <global_idx.cu>
-// cordinates functions
+// cordinates functions lib source
 #include <co_ordinates.cu>
 
-#define PI 3.1412f
 
 // Gaussian Kernel
-__global__ void gaussian_kernel(float *d_gaussianKernel, int width, int height, float sigma) {
-    // get thread id
-    size_t x = threadIdx.x + (size_t) blockDim.x * blockIdx.x;
-    size_t y = threadIdx.y + (size_t) blockDim.y * blockIdx.y;
-   
-    size_t ind = x + width * y;
-   
-    // only threads inside array range compute
-    if (x < width && y < height) {
-        d_gaussianKernel[ind] = (1.0f/(2 * PI * sigma * sigma)) * exp(-1.0f *(((x - width/2.0f) * (x - width/2.0f) + (y - height/2.0f) * (y - height/2.0f))/(2 * sigma * sigma)));
-    }     
+void gaussian_kernel(float *gaussian, float sigma) {
+    // some consts and params
+    const float PI = 3.1412f;
+    uint32_t radius = ceil(3 * sigma);
+    uint32_t width = 2 * radius + 1;
+    uint32_t height = 2 * radius + 1;
+
+    // gaussian init
+    float sum = 0.f;
+    for(uint32_t x = 0; x < width; x++) {
+        for(uint32_t y = 0; y < height; y++) {
+            size_t id = y * width + x;
+            gaussian[id] = (1.0f/(2 * PI * sigma * sigma)) * exp(-1.0f *(((x - width / 2.0f) * (x - width / 2.0f) + (y - height / 2.0f) * (y - height / 2.0f))/(2 * sigma * sigma)));
+            sum += gaussian[id];
+        }
+    }
+
+    // normalise
+    for(size_t i = 0; i < width * height; i++) gaussian[i] /= sum;
 }
 
 
-// Convolution kernel
-__global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, uint32_t w, uint32_t h, uint32_t nc, uint32_t wKernel, uint32_t hKernel) {
+
+__global__ void convolution_dsm_gk(float *d_imgIn, float *d_kernel, float *d_imgOut, uint32_t w, uint32_t h, uint32_t nc, uint32_t wKernel, uint32_t hKernel) {
     // get thread global id in 2D
     dim3 globalIdx = globalIdx_Dim3();
 
@@ -80,7 +84,7 @@ __global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, ui
                         // next pixel in 2D
                         dim3 pixel2D = dim3(globalIdx.x + directn_x * w_i, globalIdx.y + directn_y * h_i, 0);
 		 				// if current pixel not on border of image then go to next pixel else clamp it
- 				   		if(0 <= pixel2D.x && pixel2D.x < w && 0 <= pixel2D.y && pixel2D.y < h)
+ 				   		if(pixel2D.x < w && pixel2D.y < h)
  				   			pixel = linearize_coords(pixel2D, dim3(w, h, 0));
 
  				   		// copy pixel to shared memory
@@ -114,9 +118,9 @@ __global__ void convolution(float *d_imgIn, float *d_kernel, float *d_imgOut, ui
 }
 
 
-// alloc, memcopy, kernel calls (gaussian kernel and convolution) de-alloc 
-void gaussian_convolve_GPU(float *h_imgIn, float *h_gaussian, float *h_imgOut, uint32_t w, uint32_t h, uint32_t nc, uint32_t wKernel, uint32_t hKernel, float sigma) {
-	// allocate and copy memory to GPU
+// alloc, memcopy, kernel calls (gaussian kernel and convolution_dsm_gk) de-alloc 
+void gaussian_convolve_GPU(float *h_imgIn, float *h_kernel, float *h_imgOut, uint32_t w, uint32_t h, uint32_t nc, uint32_t wKernel, uint32_t hKernel) {
+    // allocate memory and copy data to GPU
 	size_t imgSize = w * h * nc * sizeof(float);
 	size_t kernelSize = wKernel * hKernel * sizeof(float);
 
@@ -130,48 +134,19 @@ void gaussian_convolve_GPU(float *h_imgIn, float *h_gaussian, float *h_imgOut, u
 
 	cudaMemcpy(d_imgIn, h_imgIn, imgSize, cudaMemcpyHostToDevice);
 	CUDA_CHECK;
-
-	// define dimensions - 3D
-    // NOTE: CC1.x doesn't support 3D grids
-    dim3 block = dim3(16, 16, 1);
-    dim3 grid = dim3((wKernel + block.x - 1) / block.x, (hKernel + block.y - 1) / block.y, 1);
-    // create gaussian kernel
-	gaussian_kernel<<<grid, block>>>(d_kernel, wKernel, hKernel, sigma);
-
-    // copy back data to CPU
-    cudaMemcpy(h_gaussian, d_kernel, kernelSize, cudaMemcpyDeviceToHost);
-    CUDA_CHECK;
-    
-    
-    float sum = 0.f;
-    float maxVal = 0.f;
-    for(int i = 0; i < wKernel * hKernel; i++)
-        sum += h_gaussian[i];
-
-    for(int i = 0; i < wKernel * hKernel; i++) {
-        h_gaussian[i] /= sum;
-        if(h_gaussian[i] > maxVal) maxVal = h_gaussian[i];
-    }
-
-    /*for(int i = 0; i < wKernel * hKernel; i++)
-    {
-        h_gaussian[i] /= maxVal;
-    }*/
-
-
-    cudaMemcpy(d_kernel, h_gaussian, kernelSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_kernel, h_kernel, kernelSize, cudaMemcpyHostToDevice);
     CUDA_CHECK;
 	
 	// define dimensions - 3D
     // NOTE: CC1.x doesn't support 3D grids
-    block = dim3(16, 16, 1);
-    grid = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
+    dim3 block = dim3(16, 16, 1);
+    dim3 grid = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y, 1);
 
     // dyanmically allocate shared memory bytes - NOTE the size > kernel
     size_t smBytes = (block.x + wKernel) * (block.y + hKernel) * sizeof(float);
 
     // convolute image
-	convolution<<<grid, block, smBytes>>>(d_imgIn, d_kernel, d_imgOut, w, h, nc, wKernel, hKernel);
+	convolution_dsm_gk<<<grid, block, smBytes>>>(d_imgIn, d_kernel, d_imgOut, w, h, nc, wKernel, hKernel);
 	
 	// copy back data to CPU   
 	cudaMemcpy(h_imgOut, d_imgOut, imgSize, cudaMemcpyDeviceToHost);
