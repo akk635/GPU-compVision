@@ -172,7 +172,7 @@ int main(int argc, char **argv)
     Timer timer; timer.start();
 
     // GPU version 
-    gaussian_convolve_dsm_gk_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian);
+    gaussian_convolve_dsm_ck_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian);
 
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "time: " << t*1000 << " ms" << endl;
