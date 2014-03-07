@@ -169,18 +169,33 @@ int main(int argc, char **argv)
     cout << "Usage: " << argv[0] << " -epsilon <value>" << endl; return 1;
     }
 
-    // get epsilon
+    // get steps
     uint32_t steps;
     retVal = getParam("steps", steps, argc, argv);
     if (!retVal) {
         cerr << "ERROR: no step specified" << endl;
         cout << "Usage: " << argv[0] << " -steps <value>" << endl; return 1;
     }
+
+    // get diffusivity type
+    const uint32_t MAX_DIFF_TYPE = 2;
+    uint32_t diffType;
+    retVal = getParam("diffusivity_type", diffType, argc, argv);
+    if (!retVal || diffType > MAX_DIFF_TYPE) {
+        cerr << "ERROR: no step specified or invalid value given" << endl;
+        cout << "Usage: " << argv[0] << " -diffusivity_type <key-value> from {0: 1/max(s, e), 1: 1, 2: exp(-s^2/e)/e}" << endl; return 1;
+    }
+
+    // output parameters
+    cout << "TAU: " << TAU << endl;
+    cout << "EPSILON: " << EPSILON << endl;
+    cout << "Steps: " << steps << endl;
+    cout << "Diffusivity type: " << diffType << endl;
    
     Timer timer; timer.start();
 
     // GPU version
-    huber_diffusion_caller(imgIn, imgOut, dim3(w, h, 0), nc, TAU, EPSILON, steps);
+    huber_diffusion_caller(imgIn, imgOut, dim3(w, h, 0), nc, TAU, EPSILON, steps, diffType);
 
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "time: " << t*1000 << " ms" << endl;

@@ -66,12 +66,21 @@ __global__ void gradient_normalized(float *d_imgGradX, float *d_imgGradY, float 
 }
 
 
-__host__ __device__ float g_huber(float EPSILON, float s) {
-	return 1.f / max(EPSILON, s);
+__host__ __device__ float g_diffusivity(float EPSILON, float s, uint32_t type) {
+    switch(type) {
+        case IDENTITY:
+            return 1;
+        case EXPONENTIAL:
+            return expf(- pow(s, 2) / EPSILON) / EPSILON;
+        default: // DEFAULT
+            return 1.f / max(EPSILON, s);
+
+        // implement more here if needed and update enum in header file
+    }
 }
 
 
-__global__ void huber_diffusivity(float *d_imgGradX, float *d_imgGradY, float * d_imgGradNorm, dim3 imgDims, uint32_t nc, float EPSILON) {
+__global__ void huber_diffuse(float *d_imgGradX, float *d_imgGradY, float * d_imgGradNorm, dim3 imgDims, uint32_t nc, float EPSILON, uint32_t diffType) {
 	// get global idx in XY (channels exclusive)
     dim3 globalIdx_XY = globalIdx_Dim2();
 
@@ -86,8 +95,8 @@ __global__ void huber_diffusivity(float *d_imgGradX, float *d_imgGradY, float * 
         	size_t chOffset = imgDims.x * imgDims.y * ch_i;
 
         	// diffuse gradient of current pixel at current channel
-        	d_imgGradX[id + chOffset] = g_huber(EPSILON, d_imgGradNorm[id]) * d_imgGradX[id + chOffset];    
-        	d_imgGradY[id + chOffset] = g_huber(EPSILON, d_imgGradNorm[id]) * d_imgGradY[id + chOffset];
+        	d_imgGradX[id + chOffset] = g_diffusivity(EPSILON, d_imgGradNorm[id], diffType) * d_imgGradX[id + chOffset];    
+        	d_imgGradY[id + chOffset] = g_diffusivity(EPSILON, d_imgGradNorm[id], diffType) * d_imgGradY[id + chOffset];
         }
     }
 }
@@ -141,7 +150,7 @@ __global__ void diffuse_image(float *d_imgIn, float *d_imgDiv, float *d_imgDiffu
 }
 
 
-void huber_diffusion_caller(float *h_imgIn, float *h_imgOut, dim3 imgDims, uint32_t nc, float TAU, float EPSILON, uint32_t steps) {
+void huber_diffusion_caller(float *h_imgIn, float *h_imgOut, dim3 imgDims, uint32_t nc, float TAU, float EPSILON, uint32_t steps, uint32_t diffType) {
 	// size with channels
     size_t imgSizeBytes = imgDims.x * imgDims.y * nc * sizeof(float);
 
@@ -167,13 +176,13 @@ void huber_diffusion_caller(float *h_imgIn, float *h_imgOut, dim3 imgDims, uint3
     dim3 grid = dim3((imgDims.x + block.x - 1) / block.x, (imgDims.y + block.y - 1) / block.y, 1);
 
     // for each time step
-    for(uint32_t tStep = 0; tStep < ceil(steps / TAU); tStep++) {
+    for(uint32_t tStep = 0; tStep < steps; tStep++) {
     	// find gradient
     	gradient_fd<<<grid, block>>>(d_imgIn, d_imgGradX, d_imgGradY, imgDims, nc);
     	// normalise the gradient
     	gradient_normalized<<<grid, block>>>(d_imgGradX, d_imgGradY, d_imgGradNorm, imgDims, nc);
     	// huber_diffusivity := g * GRAD(U)
-    	huber_diffusivity<<<grid, block>>>(d_imgGradX, d_imgGradY, d_imgGradNorm, imgDims, nc, EPSILON);
+    	huber_diffuse<<<grid, block>>>(d_imgGradX, d_imgGradY, d_imgGradNorm, imgDims, nc, EPSILON, diffType);
     	// divergence := DIV(huber_diffusivity)
     	divergence<<<grid, block>>>(d_imgGradX, d_imgGradY, d_imgDiv, imgDims, nc);
     	// diffuse image := U(t + 1) = U(t) + t * divergence
