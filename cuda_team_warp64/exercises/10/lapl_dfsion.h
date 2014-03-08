@@ -9,6 +9,8 @@
 #define LAPL_DFSION_H_
 #include "aux.h"
 
+#include <stdlib.h>
+
 __global__ void gpu_laplace_dfsion_kernel(float * d_imgIn, float *d_imgOut,
 		int w, int h, int nc,  float timeStep);
 

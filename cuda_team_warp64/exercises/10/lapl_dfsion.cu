@@ -39,20 +39,10 @@ __global__ void gpu_laplace_dfsion_kernel(float * d_imgIn, float *d_imgOut,
 	if (x < w && y < h) {
 		for (int i = 0; i < nc; i++) {
 
-			d_imgOut[ind + i * w * h] = d_imgIn[ind + i * w * h]
-					+ timeStep
-							* (((x + 1) < w ? 1 : 0)
-									* d_imgIn[ind + i * w * h + 1]
-									+ (x > 0 ? 1 : 0)
-											* d_imgIn[ind + i * w * h - 1]
-									+ ((y + 1) < h ? 1 : 0)
-											* d_imgIn[ind + i * w * h + w]
-									+ (y > 0 ? 1 : 0)
-											* d_imgIn[ind + i * w * h - w]
-									- (((x + 1) < w ? 1 : 0) + (x > 0 ? 1 : 0)
-											+ ((y + 1) < h ? 1 : 0)
-											+ (y > 0 ? 1 : 0))
-											* d_imgIn[ind + i * w * h]);
+			d_imgOut[ind + i * w * h] = d_imgIn[ind + i * w * h] + timeStep * (((x + 1) < w ? 1 : 0) * d_imgIn[ind + i * w * h + 1] + \
+				(x > 0 ? 1 : 0) * d_imgIn[ind + i * w * h - 1] + ((y + 1) < h ? 1 : 0) * d_imgIn[ind + i * w * h + w] + \
+				(y > 0 ? 1 : 0) * d_imgIn[ind + i * w * h - w] - (((x + 1) < w ? 1 : 0) + (x > 0 ? 1 : 0) + ((y + 1) < h ? 1 : 0) + \
+				(y > 0 ? 1 : 0)) * d_imgIn[ind + i * w * h]);
 		}
 	}
 }

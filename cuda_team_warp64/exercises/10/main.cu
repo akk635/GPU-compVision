@@ -138,7 +138,6 @@ int main(int argc, char **argv) {
 
 	// allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
 	float *imgOut = new float[(size_t) w * h * mOut.channels()];
-	int nc_out = mOut.channels();
 
 	// For camera mode: Make a loop to read in camera frames
 #ifdef CAMERA
@@ -166,6 +165,26 @@ int main(int argc, char **argv) {
 	/*	cpu_convolution(imgIn, imgOut, k, kradius, w, h, nc);*/
 	/*	gpu_task gpu(imgIn, k, w, h, kradius, nc, nc_out);*/
 
+    // get tau
+    float timeStep;
+    bool retVal = getParam("time_step", timeStep, argc, argv);
+    if (!retVal) {
+        cerr << "ERROR: no time step specified" << endl;
+        cout << "Usage: " << argv[0] << " -time_step <value> " << endl; return 1;
+    }
+
+    // get stop time
+    uint32_t steps;
+    retVal = getParam("steps", steps, argc, argv);
+    if (!retVal) {
+        cerr << "ERROR: no of steps not specified" << endl;
+        cout << "Usage: " << argv[0] << " -steps <value>" << endl; return 1;
+    }    
+
+    // output parameters
+    cout << "Time step: " << timeStep << endl;
+    cout << "Steps: " << steps << endl;
+
 	Timer timer;
 	timer.start();
 	lapl_dfsion laplace_dfsion(imgIn, w,  h,nc);
@@ -174,7 +193,7 @@ int main(int argc, char **argv) {
 	dim3 grid = dim3((w + block.x - 1) / block.x, (h + block.y - 1) / block.y,
 			1);
 
-	float timeStep = 0.15f, finalTime = 4.5f;
+	float finalTime = steps * timeStep;
 	laplace_dfsion.lapl_dfsion_caller(grid, block, finalTime,
 			timeStep);
 

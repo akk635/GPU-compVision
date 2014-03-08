@@ -18,13 +18,13 @@ enum DIFFUSIVITIES {
 
 
 // huber diffusivity formula
-__host__ __device__ float g_huber(float EPSILON, float s);
+__host__ __device__ float g_diffusivity(float EPSILON, float s, uint32_t type);
 
 // gradient using forward difference
 __global__ void gradient_fd(float *d_imgIn, float *d_imgGradX, float *d_imgGradY, dim3 imgDims, uint32_t nc);
 
-// computes the normalized gradient
-__global__ void gradient_normalized(float *d_imgGradX, float *d_imgGradY, float *d_imgGradNorm, dim3 imgDims, uint32_t nc);
+// computes the absolute value of gradient
+__global__ void gradient_abs(float *d_imgGradX, float *d_imgGradY, float *d_imgGradNorm, dim3 imgDims, uint32_t nc);
 
 // multiplies the gradient with huber diffusivity value
 __global__ void huber_diffuse(float *d_imgGradX, float *d_imgGradY, float * d_imgGradNorm, dim3 imgDims, uint32_t nc, float EPSILON, uint32_t diffType=DEFAULT);

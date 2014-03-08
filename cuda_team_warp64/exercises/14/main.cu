@@ -31,7 +31,7 @@ using namespace std;
 // uncomment to use the camera
 //#define CAMERA
 
-#include "convolution.h"
+#include "inpainting_gradient_descent.h"
 
 
 
@@ -110,37 +110,10 @@ int main(int argc, char **argv)
     cout << "image: " << w << " x " << h << endl;
 
 
-
-    // gaussian kernel params
-    /*// get tau
-    float TAU;
-    bool retVal = getParam("tau", TAU, argc, argv);
-    if (!retVal) {
-        cerr << "ERROR: no TAU specified" << endl;
-        cout << "Usage: " << argv[0] << " -tau <value> " << endl; return 1;
-    }
-
-    // get steps
-    uint32_t steps;
-    retVal = getParam("steps", steps, argc, argv);
-    if (!retVal) {
-        cerr << "ERROR: no step specified" << endl;
-        cout << "Usage: " << argv[0] << " -steps <value>" << endl; return 1;
-    }
-    */
-    // float sigma = sqrtf(2 * TAU * steps);
-    float sigma = 2.f;
-    uint32_t rad = ceil(3 * sigma);
-    uint32_t wGaussian = 2 * rad + 1;
-    uint32_t hGaussian = 2 * rad + 1;
-
-
-    cout << "kernel: " << wGaussian << " x " << hGaussian << endl;
-    
     //cv::Mat mOut(h,w,mIn.type());  // mOut will have the same number of channels as the input image, nc layers
     //cv::Mat mOut(h,w,CV_32FC3);    // mOut will be a color image, 3 layers
-    cv::Mat mOutGaussian(hGaussian, wGaussian, CV_32FC1);    // mOut will be a grayscale image, 1 layer
     cv::Mat mOut(h, w, mIn.type());  // mOut will have the same number of channels as the input image, nc layers
+    cv::Mat mMask(h, w, CV_32FC1);  // mOut will have the same number of channels as the input image, nc layers
     // ### Define your own output images here as needed
 
 
@@ -159,7 +132,7 @@ int main(int argc, char **argv)
     float *imgOut = new float[(size_t)w * h * mOut.channels()];
 
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOutGaussian = new float[(size_t)wGaussian * hGaussian * mOutGaussian.channels()];
+    float *imgMask = new float[(size_t)w * h * mMask.channels()];
 
 
 
@@ -183,14 +156,50 @@ int main(int argc, char **argv)
     // But for CUDA it's better to work with layered images: rrr... ggg... bbb...
     // So we will convert as necessary, using interleaved "cv::Mat" for loading/saving/displaying, and layered "float*" for CUDA computations
     convert_mat_to_layered (imgIn, mIn);
-   
-    // create gaussian using CPU
-    gaussian_kernel(imgOutGaussian, sigma);
 
+    // get tau
+    float TAU;
+    bool retVal = getParam("tau", TAU, argc, argv);
+    if (!retVal) {
+        cerr << "ERROR: no TAU specified" << endl;
+        cout << "Usage: " << argv[0] << " -tau <value> " << endl; return 1;
+    }
+
+    // get epsilon
+    float EPSILON;
+    retVal = getParam("epsilon", EPSILON, argc, argv);
+    if (!retVal) {
+        cerr << "ERROR: no EPSILON specified" << endl;
+    cout << "Usage: " << argv[0] << " -epsilon <value>" << endl; return 1;
+    }
+
+    // get steps
+    uint32_t steps;
+    retVal = getParam("steps", steps, argc, argv);
+    if (!retVal) {
+        cerr << "ERROR: no step specified" << endl;
+        cout << "Usage: " << argv[0] << " -steps <value>" << endl; return 1;
+    }
+
+    // get diffusivity type
+    const uint32_t MAX_DIFF_TYPE = 2;
+    uint32_t diffType;
+    retVal = getParam("diffusivity_type", diffType, argc, argv);
+    if (!retVal || diffType > MAX_DIFF_TYPE) {
+        cerr << "ERROR: no step specified or invalid value given" << endl;
+        cout << "Usage: " << argv[0] << " -diffusivity_type <key-value> from {0: 1/max(s, e), 1: 1, 2: exp(-s^2/e)/e}" << endl; return 1;
+    }
+
+    // output parameters
+    cout << "TAU: " << TAU << endl;
+    cout << "EPSILON: " << EPSILON << endl;
+    cout << "Steps: " << steps << endl;
+    cout << "Diffusivity type: " << diffType << endl;
+   
     Timer timer; timer.start();
 
-    // GPU version 
-    gaussian_convolve_dsm_ck_GPU(imgIn, imgOutGaussian, imgOut, w, h, nc, wGaussian, hGaussian);
+    // GPU version
+    inpainting_gradient_descent(imgIn, imgMask, imgOut, dim3(w, h, 0), nc, make_float3(0, 1, 0), make_float3(0.5, 0.5, 0.5), TAU, EPSILON, steps, diffType);
 
     timer.end();  float t = timer.get();  // elapsed time in seconds
     cout << "time: " << t*1000 << " ms" << endl;
@@ -201,11 +210,10 @@ int main(int argc, char **argv)
     // ### Display your own output images here as needed
     // show output image: first convert to interleaved opencv format from the layered raw array    
     convert_layered_to_mat(mOut, imgOut);
-    showImage("Convolution", mOut, 100+w+40, 100);
-    
-    // show output image: first convert to interleaved opencv format from the layered raw array    
-    convert_layered_to_mat(mOutGaussian, imgOutGaussian);
-    showImage("Gaussian", mOutGaussian, 100+w+200, 100);
+    showImage("Inpainted", mOut, 100+w+40, 100);
+
+    convert_layered_to_mat(mMask, imgMask);
+    showImage("Mask", mMask, 100+w+140, 100);
     
 
 
@@ -222,12 +230,10 @@ int main(int argc, char **argv)
 
     // save input and result
     cv::imwrite("image_result.png",mOut * 255.f);
-    cv::imwrite("image_gaussian_kernel.png",mOutGaussian * 255.f);
 
     // free allocated arrays
     delete[] imgIn;
     delete[] imgOut;
-    delete[] imgOutGaussian;
 
     // close all opencv windows
     cvDestroyAllWindows();

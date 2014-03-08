@@ -1,7 +1,10 @@
+/********************************************************************************
+* 
+* 
+********************************************************************************/
 
 
-
-#include "non_linear_diffusion.h"
+#include "inpainting_gradient_descent.h"
 
 // cuda helpers by lab instructors
 #include <aux.h>
@@ -10,6 +13,49 @@
 #include <global_idx.h>
 #include <global_idx.cu>
 
+
+// creates a mask for a given color in an image and sets that color to a given color
+__global__ void mask_and_set(float *d_imgIn, float *d_mask, float3 maskCol, float3 setCol, dim3 imgDims, uint32_t nc) {
+    // get global idx in XY (channels exclusive)
+    dim3 globalIdx_XY = globalIdx_Dim2();
+
+    // copy mask and set color
+    float maskColor[] = {maskCol.x, maskCol.y, maskCol.z};
+    float setColor[] = {setCol.x, setCol.y, setCol.z};
+
+    // only threads inside image boundary computes
+    if (globalIdx_XY.x < imgDims.x && globalIdx_XY.y < imgDims.y) {
+        // get linear index
+        size_t id = linearize_globalIdx(globalIdx_XY, imgDims);
+
+        // if current pixel has the mask color and set mask as 0
+        bool toMask = true; d_mask[id] = 0.f;
+
+        // for all channels
+        for(uint32_t ch_i = 0; ch_i < nc; ch_i++) {
+            // channel offset
+            size_t chOffset = (size_t) imgDims.x * imgDims.y * ch_i;
+
+            // check if pixeil value at current channel satisfies mask color
+            toMask = toMask && (d_imgIn[id + chOffset] == maskColor[ch_i]);
+        }
+
+        // if pixel has mask color
+        if(toMask) {
+            // set mask to 1 at pixel location
+            d_mask[id] = 1.f;
+
+            // for all channels
+            for(uint32_t ch_i = 0; ch_i < nc; ch_i++) {
+                // channel offset
+                size_t chOffset = (size_t) imgDims.x * imgDims.y * ch_i;
+
+                // rewrite pixel by set color
+                d_imgIn[id + chOffset] = setColor[ch_i];
+            }
+        }
+    }
+}
 
 
 __global__ void gradient_fd(float *d_imgIn, float *d_imgGradX, float *d_imgGradY, dim3 imgDims, uint32_t nc) {
@@ -68,11 +114,9 @@ __global__ void gradient_abs(float *d_imgGradX, float *d_imgGradY, float *d_imgG
 
 __host__ __device__ float g_diffusivity(float EPSILON, float s, uint32_t type) {
     switch(type) {
-        case IDENTITY:
+        case 1:
             return 1;
-        case EXPONENTIAL:
-            return expf(- pow(s, 2) / EPSILON) / EPSILON;
-        default: // DEFAULT
+        default: // HUBER
             return 1.f / max(EPSILON, s);
 
         // implement more here if needed and update enum in header file
@@ -130,7 +174,7 @@ __global__ void divergence(float *d_imgGradX, float *d_imgGradY, float *d_imgDiv
 }
 
 
-__global__ void diffuse_image(float *d_imgIn, float *d_imgDiv, float *d_imgDiffused, dim3 imgDims, uint32_t nc, float TAU) {
+__global__ void inpaint_with_mask(float *d_imgIn, float *d_imgDiv, float *d_mask, dim3 imgDims, uint32_t nc, float TAU) {
 	// get global idx in XY (channels exclusive)
     dim3 globalIdx_XY = globalIdx_Dim2();
 
@@ -144,23 +188,20 @@ __global__ void diffuse_image(float *d_imgIn, float *d_imgDiv, float *d_imgDiffu
         	// channel offset
             size_t chOffset = (size_t) imgDims.x * imgDims.y * ch_i;
 
-            // evolve image
-            d_imgDiffused[id + chOffset] =  d_imgIn[id + chOffset] + TAU * d_imgDiv[id + chOffset];
+            // evolve image only inside mask
+            d_imgIn[id + chOffset] =  d_imgIn[id + chOffset] + d_mask[id] * TAU * d_imgDiv[id + chOffset];
         }
     }
 }
 
 
-void huber_diffusion_caller(float *h_imgIn, float *h_imgOut, dim3 imgDims, uint32_t nc, float TAU, float EPSILON, uint32_t steps, uint32_t diffType) {
+void inpainting_gradient_descent(float *h_imgIn, float *h_mask, float *h_imgOut, dim3 imgDims, uint32_t nc, float3 maskColor, float3 setColor, float TAU, float EPSILON, uint32_t steps, uint32_t diffType) {
 	// size with channels
     size_t imgSizeBytes = (size_t) imgDims.x * imgDims.y * nc * sizeof(float);
 
     // alloc GPU memory and copy data
-    float *d_imgIn, *d_imgGradX, *d_imgGradY, *d_imgGradNorm, *d_imgDiv, *d_imgOut;
-    cudaMalloc((void **) &d_imgIn, imgSizeBytes);
-    CUDA_CHECK;
-    cudaMemcpy(d_imgIn, h_imgIn, imgSizeBytes, cudaMemcpyHostToDevice);
-    CUDA_CHECK;
+    float *d_imgGradX, *d_imgGradY, *d_imgGradNorm, *d_imgDiv, *d_imgOut;
+    float *d_mask;
     cudaMalloc((void **) &d_imgGradX, imgSizeBytes);
     CUDA_CHECK;
     cudaMalloc((void **) &d_imgGradY, imgSizeBytes);
@@ -171,37 +212,39 @@ void huber_diffusion_caller(float *h_imgIn, float *h_imgOut, dim3 imgDims, uint3
     CUDA_CHECK;
     cudaMalloc((void **) &d_imgOut, imgSizeBytes);
     CUDA_CHECK;
+    cudaMemcpy(d_imgOut, h_imgIn, imgSizeBytes, cudaMemcpyHostToDevice);
+    CUDA_CHECK;
+    cudaMalloc((void **) &d_mask, imgSizeBytes / nc);
+    CUDA_CHECK;
 
     // define block and grid
     dim3 block = dim3(16, 16, 1);
     dim3 grid = dim3((imgDims.x + block.x - 1) / block.x, (imgDims.y + block.y - 1) / block.y, 1);
 
+    // create mask
+    mask_and_set<<<grid, block>>>(d_imgOut, d_mask, maskColor, setColor, imgDims, nc);
+
     // for each time step
     for(uint32_t tStep = 0; tStep < steps; tStep++) {
     	// find gradient
-    	gradient_fd<<<grid, block>>>(d_imgIn, d_imgGradX, d_imgGradY, imgDims, nc);
+    	gradient_fd<<<grid, block>>>(d_imgOut, d_imgGradX, d_imgGradY, imgDims, nc);
     	// normalise the gradient
     	gradient_abs<<<grid, block>>>(d_imgGradX, d_imgGradY, d_imgGradNorm, imgDims, nc);
     	// huber_diffusivity := g * GRAD(U)
     	huber_diffuse<<<grid, block>>>(d_imgGradX, d_imgGradY, d_imgGradNorm, imgDims, nc, EPSILON, diffType);
     	// divergence := DIV(huber_diffusivity)
     	divergence<<<grid, block>>>(d_imgGradX, d_imgGradY, d_imgDiv, imgDims, nc);
-    	// diffuse image := U(t + 1) = U(t) + t * divergence
-    	diffuse_image<<<grid, block>>>(d_imgIn, d_imgDiv, d_imgOut, imgDims, nc, TAU);
-
-    	// switch images
-    	float * temp = d_imgOut;
-    	d_imgOut = d_imgIn;
-    	d_imgIn = temp;
+    	// diffuse image := U(t + 1) = U(t) + t * divergence with mask
+    	inpaint_with_mask<<<grid, block>>>(d_imgOut, d_imgDiv, d_mask, imgDims, nc, TAU);
     }
 
     // copy back data
     cudaMemcpy(h_imgOut, d_imgOut, imgSizeBytes, cudaMemcpyDeviceToHost);
     CUDA_CHECK;
+    cudaMemcpy(h_mask, d_mask, imgSizeBytes / nc, cudaMemcpyDeviceToHost);
+    CUDA_CHECK;
 
     // free allocations
-    cudaFree(d_imgIn);
-    CUDA_CHECK;
     cudaFree(d_imgGradX);
     CUDA_CHECK;
     cudaFree(d_imgGradY);
@@ -211,4 +254,7 @@ void huber_diffusion_caller(float *h_imgIn, float *h_imgOut, dim3 imgDims, uint3
     cudaFree(d_imgDiv);
     CUDA_CHECK;
     cudaFree(d_imgOut);
+    CUDA_CHECK;
+    cudaFree(d_mask);
+    CUDA_CHECK;
 }
