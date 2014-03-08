@@ -7,9 +7,7 @@
  	-- in three dimension
  	-- linear id given the width, height and depth of the workspace
  ******************************************************************************/
-
 # include "global_idx.h"
-
 
 __device__ size_t globalIdx_X() {
  	return (size_t) blockDim.x * blockIdx.x + threadIdx.x;
