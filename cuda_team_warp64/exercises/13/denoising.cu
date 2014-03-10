@@ -89,7 +89,7 @@ __global__ void jacobi_update(float *d_imgIn, float * d_IMG_NOISY, float * d_img
         size_t id = linearize_globalIdx(globalIdx_XY, imgDims);
 
         // for RED-BLACK UPDATE
-        if (notRedBlack || ((globalIdx_XY.x + globalIdx_XY.x) % 2) == rbGroup) {
+        if (notRedBlack || ((globalIdx_XY.x + globalIdx_XY.y) % 2) == rbGroup) {
             // for all channels
             for(uint32_t ch_i = 0; ch_i < nc; ch_i++) {
                 // channel offset
