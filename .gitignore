@@ -1,0 +1,3 @@
+.*
+!/.gitignore
+cuda_team_warp64/docs/*

@@ -1,0 +1,35 @@
+/******************************************************************************
+ * Author: Shiv
+ * Date: 03/03/14
+ * global_idx.cu
+    - Library file for computing global id of a thread
+ 	-- in a dimension
+ 	-- in three dimension
+ 	-- linear id given the width, height and depth of the workspace
+ ******************************************************************************/
+
+# include "global_idx.h"
+
+
+// returns the golbal index of a thread along a dimension x
+__device__ size_t _globalIdx_X() {
+ 	return (size_t) blockDim.x * blockIdx.x + threadIdx.x;
+ }
+
+
+// returns the golbal index of a thread along a dimension y
+__device__ size_t _globalIdx_Y() {
+ 	return (size_t) blockDim.y * blockIdx.y + threadIdx.y;
+ }
+
+
+// returns the golbal index of a thread along a dimension z
+__device__ size_t _globalIdx_Z() {
+ 	return (size_t) blockDim.z * blockIdx.z + threadIdx.z;
+ }
+
+
+// returns global indexes in three dimensions
+__device__ dim3 _globalIdx_Dim3() {
+ 	return dim3(_globalIdx_X(), _globalIdx_Y(), _globalIdx_Z());
+ }
