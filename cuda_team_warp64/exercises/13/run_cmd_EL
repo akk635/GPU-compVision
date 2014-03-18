@@ -1,0 +1,1 @@
+./main -i ../../images/in/hepburn.png -sigma 0.1 -lambda .2 -epsilon 0.01 -steps 120 -diffusivity_type 1 -method EL

@@ -54,8 +54,24 @@ __device__ dim3 neighbour_globalIdx(int xOff, int yOff, int zOff, dim3 globalIdx
 }
 
 
-__device__ dim3 neighbour_globalIdx(dim3 globalIdx, int3 offset) {
- 	return dim3(globalIdx.x + offset.x, globalIdx.y + offset.y, globalIdx.z + offset.z);
+__device__ dim3 neighbour_globalIdx(dim3 globalIdx, int3 offset, dim3 dims, bounding boundType) {
+	// calc neighbour
+	int x = globalIdx.x + offset.x, y = globalIdx.y + offset.y, z = globalIdx.z + offset.z;
+
+	// boundary check
+	switch(boundType) {
+		// clamping
+		case CLAMP:
+			x = dims.x && (x >= (int) dims.x) ? dims.x - 1 : x; x = (x < 0) ? 0 : x;
+			y = dims.y && (y >= (int) dims.y) ? dims.y - 1 : y; y = (y < 0) ? 0 : y;
+			z = dims.z && (z >= (int) dims.z) ? dims.z - 1 : z; z = (z < 0) ? 0 : z;
+			break;
+		// none
+		default:
+			break;
+	}
+
+ 	return dim3(x, y, z);
 }
 
 
@@ -67,9 +83,9 @@ __device__ size_t linearize_neighbour_globalIdx(uint32_t w, uint32_t h, int xOff
 }
 
 
-__device__ size_t linearize_neighbour_globalIdx(dim3 globalIdx, dim3 dims, int3 offset) {
+__device__ size_t linearize_neighbour_globalIdx(dim3 globalIdx, dim3 dims, int3 offset, bounding boundType) {
  	// find global index of thread
- 	dim3 neighbourGlobalIdx = neighbour_globalIdx(globalIdx, offset);
+ 	dim3 neighbourGlobalIdx = neighbour_globalIdx(globalIdx, offset, dims, boundType);
 
  	return (size_t) (neighbourGlobalIdx.z * dims.x * dims.y) + (size_t) (neighbourGlobalIdx.y * dims.x) + neighbourGlobalIdx.x;
 }
