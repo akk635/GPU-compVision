@@ -36,7 +36,7 @@ __global__ void calc_data_term(float *d_imgLeft, float *d_imgRight, float *d_g, 
             size_t chOffset = (size_t) imgDims.x * imgDims.y * ch_i;
 
             // get linear ids of shifted pixel in right image with clamping
-            size_t shiftedPixel = linearize_neighbour_globalIdx(globalIdx_XY, imgDims, make_int3(globalIdx.z, 0, 0), CLAMP);
+            size_t shiftedPixel = linearize_neighbour_globalIdx(globalIdx_XY, imgDims, make_int3(-globalIdx.z, 0, 0), CLAMP);
 
             // calculate difference in intensity for current channel and shift
             g += fabsf(d_imgLeft[id_XY + chOffset] - d_imgRight[shiftedPixel + chOffset]);
@@ -174,7 +174,7 @@ __global__ void update_primal_cap(float *d_vn, float *d_vnp, float *d_vCap, dim3
 }
 
 
-__global__ void init_primal_dual(float *d_g, float *d_v, float *d_vCap, float *d_phiX, float *d_phiY, float *d_phiZ, dim3 convexGridDims) {
+__global__ void z(float *d_g, float *d_v, float *d_vCap, float *d_phiX, float *d_phiY, float *d_phiZ, dim3 convexGridDims) {
 	// get global idx in convex grid space
     dim3 globalIdx = globalIdx_Dim3();
 
