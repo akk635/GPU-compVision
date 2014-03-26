@@ -23,7 +23,9 @@
 #include <aux.h>
 #include <iostream>
 #include <math.h>
+#include "math.h"
 #include "disparity_stereo.h"
+
 using namespace std;
 
 // uncomment to use the camera
@@ -100,8 +102,6 @@ int main(int argc, char **argv) {
 			(gray ? CV_LOAD_IMAGE_GRAYSCALE : -1));
 	cv::Mat mInright = cv::imread(rimage.c_str(),
 			(gray ? CV_LOAD_IMAGE_GRAYSCALE : -1));
-	// Initializing with a left gray scale image
-	cv::Mat mInInit = cv::imread(limage.c_str(), CV_LOAD_IMAGE_GRAYSCALE);
 	// check
 	if (mInleft.data == NULL) {
 		cerr << "ERROR: Could not load left image " << limage << endl;
@@ -111,16 +111,13 @@ int main(int argc, char **argv) {
 		cerr << "ERROR: Could not load right image " << rimage << endl;
 		return 1;
 	}
-	if (mInInit.data == NULL) {
-		cerr << "ERROR: Could not load Init grey image " << rimage << endl;
-		return 1;
-	}
 
 #endif
 
 	// convert to flleftoat representation (opencv loads image values as single bytes by default)
 	mInleft.convertTo(mInleft, CV_32F);
 	mInright.convertTo(mInright, CV_32F);
+
 	// convert range of each channel to [0,1] (opencv default is [0,255])
 	mInleft /= 255.f;
 	mInright /= 255.f;
@@ -172,58 +169,61 @@ int main(int argc, char **argv) {
 	// So we will convert as necessary, using interleaved "cv::Mat" for loading/saving/displaying, and layered "float*" for CUDA computations
 	convert_mat_to_layered(imgInleft, mInleft);
 	convert_mat_to_layered(imgInright, mInright);
-//	convert_mat_to_layered(imgOut, mInInit);
-
-	for (int i = 0; i < (size_t) w * h * mOut.channels(); i++) {
-		imgOut[i] = 0.5f;
-	}
 
 	// get sigma
-	float sigma = 1 / sqrt(12);
+	float sigma = 1.f / 2.f;
 	getParam("sigma", sigma, argc, argv);
 	cout << "sigma : " << sigma << endl;
 
 	// get tau
-	float tau = 1 / sqrt(12);
+	float tau = 1.f / sqrtf(36);
 	getParam("tau", tau, argc, argv);
 	cout << "tau : " << tau << endl;
 
 	// get steps
 	uint32_t steps;
-	bool retVal = getParam("steps", steps, argc, argv);
-	if (!retVal) {
+	ret = getParam("steps", steps, argc, argv);
+	if (!ret) {
 		cerr << "ERROR: no step specified" << endl;
 		cout << "Usage: " << argv[0] << " -steps <value>" << endl;
 		return 1;
 	}
 
-	// get diffusivity type
-	const uint32_t MAX_DIFF_TYPE = 2;
-	uint32_t diffType;
-	retVal = getParam("diffusivity_type", diffType, argc, argv);
-	if (!retVal || diffType > MAX_DIFF_TYPE) {
-		cerr << "ERROR: no step specified or invalid value given" << endl;
-		cout << "Usage: " << argv[0]
-				<< " -diffusivity_type <key> from {0: 1/max(s, e), 1: 1, 2: exp(-s^2/e)/e}"
-				<< endl;
-		return 1;
-	}
+	// get mu
+	uint32_t mu = 10;
+	getParam("mu", mu, argc, argv);
+	cout << "mu : " << mu << endl;
 
-	steps = 12;
+	// get disparities
+	disparities = 90;
+	getParam("disparities", disparities, argc, argv);
+	cout << "disparities : " << disparities << endl;
+
 	// output parameters
 	cout << "Steps: " << steps << endl;
-	cout << "Diffusivity type: " << diffType << endl;
+	cout << "width " << w << endl;
 
 	Timer timer;
 	timer.start();
 
 	// GPU version
 	disparity_computation_caller(imgInleft, imgInright, imgOut, dim3(w, h, 0),
-			nc, ncOut, sigma, tau, steps, diffType);
+			nc, ncOut, sigma, tau, steps, mu, disparities);
 
 	timer.end();
+
 	float t = timer.get();  // elapsed time in seconds
 	cout << "time: " << t * 1000 << " ms" << endl;
+
+	float normalize = 0.f;
+	for (int i = 0; i < w; i++) {
+		for (int j = 0; j < h; j++) {
+			normalize = max(normalize, imgOut[i + j * w]);
+		}
+	}
+	for (int i = 0; i < w * h * ncOut; i++) {
+		imgOut[i] /= normalize;
+	}
 
 	// show input image
 	showImage("LeftInput", mInleft, 100, 100); // show at position (x_from_left=100,y_from_above=100)
