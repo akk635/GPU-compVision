@@ -218,12 +218,14 @@ int main(int argc, char **argv)
 
     // ### Display your own output images here as needed
     // show output image: first convert to interleaved opencv format from the layered raw array
-    for(int r = 0; r < h; r++)
+    /*for(int r = 0; r < h; r++)
         for(int c = 0; c < w; c++)
-            cout << imgOutDepth[r * w + c] << ((c == w - 1) ? "\n" : "  ");
+            cout << imgOutDepth[r * w + c] << ((c == w - 1) ? "\n" : "  ");*/
     convert_layered_to_mat(mOutDepth, imgOutDepth);
-    mOutDepth /= 141.f;
-    //mOutDepth = 1 - mOutDepth;
+    double minVal, maxVal;
+    minMaxLoc(mOutDepth, &minVal, &maxVal);
+    mOutDepth /= maxVal;
+    cout << maxVal << endl;
     showImage("Depth Mapping", mOutDepth, 100+2*w+40, 100);
     
 
