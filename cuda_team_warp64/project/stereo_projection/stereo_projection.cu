@@ -11,7 +11,6 @@
 #include <aux.h>
 // FIX
 #include <global_idx.h>
-#include <global_idx.cu>
 
 #include <iostream>
 
@@ -564,7 +563,7 @@ void stereo_projection_PD_tex(float *h_imgLeft, float *h_imgRight, float  *h_dep
 
     // bind data term to 2D texture
     cudaChannelFormatDesc desc = cudaCreateChannelDesc<float>();
-    cudaBindTexture2D(NULL, texRef2D, d_g, desc, convexGridDims.x, convexGridDims.y * convexGridDims.z, convexGridDims.x * sizeof(float));
+    cudaBindTexture2D(NULL, texRef2D, d_g, desc, convexGridDims.x, (size_t) convexGridDims.y * convexGridDims.z, (size_t) convexGridDims.x * sizeof(float));
     CUDA_CHECK;
 
     // init primal dual
