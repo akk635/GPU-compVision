@@ -62,9 +62,9 @@ __device__ dim3 neighbour_globalIdx(dim3 globalIdx, int3 offset, dim3 dims, boun
 	switch(boundType) {
 		// clamping
 		case CLAMP:
-			x = dims.x && (x >= (int) dims.x) ? dims.x - 1 : x; x = (x < 0) ? 0 : x;
-			y = dims.y && (y >= (int) dims.y) ? dims.y - 1 : y; y = (y < 0) ? 0 : y;
-			z = dims.z && (z >= (int) dims.z) ? dims.z - 1 : z; z = (z < 0) ? 0 : z;
+			x = (x >= (int) dims.x) ? dims.x - 1 : x; x = (x < 0) ? 0 : x;
+			y = (y >= (int) dims.y) ? dims.y - 1 : y; y = (y < 0) ? 0 : y;
+			z = (z >= (int) dims.z) ? dims.z - 1 : z; z = (z < 0) ? 0 : z;
 			break;
 		// none
 		default:
