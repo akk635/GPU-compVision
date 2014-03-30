@@ -46,6 +46,9 @@ __device__ dim3 globalIdx_Dim2();
 // returns the global id of the thread in the block's X-Y plane
 __device__ size_t localIdx_XY();
 
+// linearize the given threadIdx in a block dim
+__device__ size_t linearize_threadIdx(dim3 threadId=threadIdx, dim3 dims=blockDim);
+
 // returns linear global id depending on width and height of workspace
 __device__ size_t linearize_globalIdx(uint32_t w, uint32_t h, dim3 globalIdx=globalIdx_Dim3());
 
