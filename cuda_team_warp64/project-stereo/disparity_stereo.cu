@@ -11,7 +11,7 @@
 
 void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 		float *h_imgOut, dim3 imgDims, uint32_t nc, uint32_t ncOut, float sigma,
-		float tau, uint32_t steps, uint32_t mu, uint32_t disparities) {
+		float tau, uint32_t steps, uint32_t mu, uint32_t disparities, float *h_f) {
 
 	// size with channels
 	size_t imgSizeBytes = (size_t) imgDims.x * imgDims.y * nc * sizeof(float);
@@ -23,7 +23,7 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 	float *d_imgInleft;
 	float *d_imgInright;
 	float *d_imgOutNew[disparities], *d_imgOutOld[disparities],
-			*d_imgOutFit[disparities], *d_f[disparities], *d_phiX[disparities],
+			*d_imgOutFit[disparities], *d_f, *d_phiX[disparities],
 			*d_phiY[disparities], *d_phiZ[disparities];
 
 	cudaMalloc((void **) &d_imgInleft, imgSizeBytes);
@@ -37,6 +37,10 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 			cudaMemcpyHostToDevice);
 	CUDA_CHECK;
 
+	// 1D long big array allocated
+	cudaMalloc((void **) &d_f, imgOutSizeBytes * disparities);
+	CUDA_CHECK;
+
 	for (uint32_t i = 0; i < disparities; i++) {
 		cudaMalloc((void **) &(d_imgOutNew[i]), imgOutSizeBytes);
 		CUDA_CHECK;
@@ -44,8 +48,8 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 		CUDA_CHECK;
 		cudaMalloc((void **) &(d_imgOutFit[i]), imgOutSizeBytes);
 		CUDA_CHECK;
-		cudaMalloc((void **) &(d_f[i]), imgOutSizeBytes);
-		CUDA_CHECK;
+		/*		cudaMalloc((void **) &(d_f[i]), imgOutSizeBytes);
+		 CUDA_CHECK;*/
 		cudaMalloc((void **) &(d_phiX[i]), imgOutSizeBytes);
 		CUDA_CHECK;
 		cudaMalloc((void **) &(d_phiY[i]), imgOutSizeBytes);
@@ -72,11 +76,11 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 	cudaMemcpy(dptr_imgOutOld, d_imgOutOld, sizeof(float *) * disparities,
 			cudaMemcpyHostToDevice);
 	CUDA_CHECK;
-	cudaMalloc((void ***) &dptr_f, sizeof(float *) * disparities);
-	CUDA_CHECK;
-	cudaMemcpy(dptr_f, d_f, sizeof(float *) * disparities,
-			cudaMemcpyHostToDevice);
-	CUDA_CHECK;
+	/*	cudaMalloc((void ***) &dptr_f, sizeof(float *) * disparities);
+	 CUDA_CHECK;
+	 cudaMemcpy(dptr_f, d_f, sizeof(float *) * disparities,
+	 cudaMemcpyHostToDevice);
+	 CUDA_CHECK;*/
 	cudaMalloc((void ***) &dptr_phiX, sizeof(float *) * disparities);
 	CUDA_CHECK;
 	cudaMemcpy(dptr_phiX, d_phiX, sizeof(float *) * disparities,
@@ -123,20 +127,50 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 			(imgDims.y + block.y - 1) / block.y, 1);
 
 	//Init all the terms with the dataterm
-	/*	initialize<<<grid, block>>>(dptr_f, d_imgInleft, d_imgInright, nc, imgDims,
+	/*	initialize<<<grid, block>>>(d_f, d_imgInleft, d_imgInright, nc, imgDims,
 	 dptr_imgOutOld, dptr_imgOutFit, disparities, mu);*/
-	initialize_tm<<<grid, block>>>(dptr_f, nc, imgDims, dptr_imgOutOld,
+	initialize_tm<<<grid, block>>>(d_f, nc, imgDims, dptr_imgOutOld,
 			dptr_imgOutFit, disparities, mu);
 	initialize_phi<<<grid, block>>>(dptr_phiX, dptr_phiY, dptr_phiZ,
 			dptr_imgOutOld, dptr_f, disparities, imgDims);
+
+	// Allocating virtual 3D array
+	cudaArray* cudaarray;
+	cudaExtent volumesize;
+	//set cuda array volume size
+	volumesize = make_cudaExtent(imgDims.x, imgDims.y, disparities);
+	//allocate device memory for cuda array
+	cudaMalloc3DArray(&cudaarray, &desc, volumesize);
+	CUDA_CHECK;
+
+	// 3D memcpy parameters
+	cudaMemcpy3DParms copyparms = { 0 };
+	CUDA_CHECK;
+	copyparms.extent = volumesize;
+	copyparms.dstArray = cudaarray;
+	copyparms.kind = cudaMemcpyDefault;
+
+	copyparms.srcPtr = make_cudaPitchedPtr(d_f,
+			(size_t) imgDims.x * sizeof(float), imgDims.x, (size_t) imgDims.y);
+	cudaMemcpy3D(&copyparms);
+	CUDA_CHECK;
+
+	//Properties of the tex ref
+	texRefDataTerm.addressMode[0] = cudaAddressModeClamp;
+	texRefDataTerm.addressMode[1] = cudaAddressModeClamp;
+	texRefDataTerm.addressMode[2] = cudaAddressModeClamp;
+
+	texRefDataTerm.filterMode=cudaFilterModePoint;
+	texRefDataTerm.normalized = false;
+	cudaBindTextureToArray(texRefDataTerm,cudaarray,desc);
 
 	// for each time step
 	for (uint32_t tStep = 0; tStep < steps; tStep++) {
 
 		regularizer_update<<<grid, block>>>(dptr_phiX, dptr_phiY, dptr_phiZ,
-				dptr_imgOutFit, dptr_f, sigma, imgDims, disparities);
+				dptr_imgOutFit, d_f, sigma, imgDims, disparities);
 
-		/*regularizer_update_tm<<<grid, block>>>(dptr_phiX, dptr_phiY, dptr_phiZ,
+/*		regularizer_update_tm<<<grid, block>>>(dptr_phiX, dptr_phiY, dptr_phiZ,
 		 dptr_imgOutFit, sigma, imgDims, disparities);*/
 
 		variational_update<<<grid, block>>>(dptr_imgOutNew, dptr_imgOutOld,
@@ -172,8 +206,8 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 		CUDA_CHECK;
 		cudaFree(d_imgOutFit[disparity]);
 		CUDA_CHECK;
-		cudaFree(d_f[disparity]);
-		CUDA_CHECK;
+		/*		cudaFree(d_f[disparity]);
+		 CUDA_CHECK;*/
 		cudaFree(d_phiX[disparity]);
 		CUDA_CHECK;
 		cudaFree(d_phiY[disparity]);
@@ -190,8 +224,10 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 	CUDA_CHECK;
 	cudaFree(dptr_imgOutOld);
 	CUDA_CHECK;
-	cudaFree(dptr_f);
+	cudaFree(d_f);
 	CUDA_CHECK;
+	/*	cudaFree(dptr_f);
+	 CUDA_CHECK;*/
 	cudaFree(dptr_phiX);
 	CUDA_CHECK;
 	cudaFree(dptr_phiY);
@@ -199,11 +235,13 @@ void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 	cudaFree(dptr_phiZ);
 	CUDA_CHECK;
 
+	cudaFreeArray(cudaarray);
 	cudaUnbindTexture(texRefleftImage);
 	cudaUnbindTexture(texRefrightImage);
+	cudaUnbindTexture(texRefDataTerm);
 }
 
-__global__ void initialize(float **d_f, float *d_imgInleft, float *d_imgInright,
+__global__ void initialize(float *d_f, float *d_imgInleft, float *d_imgInright,
 		uint32_t nc, dim3 imgDims, float **d_imgOutOld, float **d_imgOutFit,
 		uint32_t disparities, uint32_t mu) {
 
@@ -231,14 +269,15 @@ __global__ void initialize(float **d_f, float *d_imgInleft, float *d_imgInright,
 			}
 			d_imgOutOld[disparity][id] = 0.f;
 			d_imgOutFit[disparity][id] = 0.f;
-			d_f[disparity][id] = init_value * mu;
+			d_f[(size_t) disparity * imgDims.x * imgDims.y + id] = init_value
+					* mu;
 		}
 		//Disparity Boundary Cdn
 		d_imgOutOld[0][id] = 1.f;
 	}
 }
 
-__global__ void initialize_tm(float **d_f, uint32_t nc, dim3 imgDims,
+__global__ void initialize_tm(float *d_f, uint32_t nc, dim3 imgDims,
 		float **d_imgOutOld, float **d_imgOutFit, uint32_t disparities,
 		uint32_t mu) {
 
@@ -264,7 +303,8 @@ __global__ void initialize_tm(float **d_f, uint32_t nc, dim3 imgDims,
 			}
 			d_imgOutOld[disparity][id] = 0.f;
 			d_imgOutFit[disparity][id] = 0.f;
-			d_f[disparity][id] = init_value * mu;
+			d_f[(size_t) disparity * imgDims.x * imgDims.y + id] = init_value
+					* mu;
 		}
 		//Disparity Boundary Cdn
 		d_imgOutOld[0][id] = 1.f;
@@ -323,7 +363,7 @@ __device__ void gradient_imgFd(float *dphiX, float *dphiY, float *dphiZ,
 }
 
 __global__ void regularizer_update(float **dptr_phiX, float **dptr_phiY,
-		float **dptr_phiZ, float **dptr_imgOutFit, float **dptr_f, float sigma,
+		float **dptr_phiZ, float **dptr_imgOutFit, float *d_f, float sigma,
 		dim3 imgDims, uint32_t disparities) {
 
 	dim3 globalIdx_XY = globalIdx_Dim2();
@@ -346,14 +386,52 @@ __global__ void regularizer_update(float **dptr_phiX, float **dptr_phiY,
 			dptr_phiY[disparity][id] = dphiY / dphiNorm;
 
 			//Forward translation
-			dphiZ += dptr_f[disparity][id];
+			dphiZ += d_f[(size_t) disparity * imgDims.x * imgDims.y + id];
 			//Total Variation Term + projection constraint
 			dphiZ = fmaxf(0.f, dphiZ);
 			/*			dptr_phiZ[disparity][id] =
 			 dphiZnorm < dptr_f[disparity][id] ?
 			 dphiZnorm : dptr_f[disparity][id];*/
 			//Backward translation
-			dptr_phiZ[disparity][id] = dphiZ - dptr_f[disparity][id];
+			dptr_phiZ[disparity][id] = dphiZ
+					- d_f[(size_t) disparity * imgDims.x * imgDims.y + id];
+		}
+	}
+}
+
+__global__ void regularizer_update_tm(float **dptr_phiX, float **dptr_phiY,
+		float **dptr_phiZ, float **dptr_imgOutFit, float sigma, dim3 imgDims,
+		uint32_t disparities){
+
+	dim3 globalIdx_XY = globalIdx_Dim2();
+
+	if (globalIdx_XY.x < imgDims.x && globalIdx_XY.y < imgDims.y) {
+		// get linear index
+		size_t id = linearize_globalIdx(globalIdx_XY, imgDims);
+		float dgradX, dgradY, dgradZ, dphiNorm, dphiZnorm, dphiX, dphiY, dphiZ;
+		// for all channels
+		for (uint32_t disparity = 0; disparity < disparities; disparity++) {
+			gradient_imgFd(&dgradX, &dgradY, &dgradZ, dptr_imgOutFit, disparity,
+					disparities, globalIdx_XY, imgDims);
+			dphiX = dptr_phiX[disparity][id] + sigma * dgradX;
+			dphiY = dptr_phiY[disparity][id] + sigma * dgradY;
+			dphiZ = dptr_phiZ[disparity][id] + sigma * dgradZ;
+			//Projection and maintaining the constraints
+			dphiNorm = powf(dphiX, 2) + powf(dphiY, 2);
+			dphiNorm = max(1.f, sqrtf(dphiNorm));
+			dptr_phiX[disparity][id] = dphiX / dphiNorm;
+			dptr_phiY[disparity][id] = dphiY / dphiNorm;
+
+			//Forward translation
+			dphiZ += tex3D(texRefDataTerm, globalIdx_XY.x, globalIdx_XY.y, disparity);
+			//Total Variation Term + projection constraint
+			dphiZ = fmaxf(0.f, dphiZ);
+			/*			dptr_phiZ[disparity][id] =
+			 dphiZnorm < dptr_f[disparity][id] ?
+			 dphiZnorm : dptr_f[disparity][id];*/
+			//Backward translation
+			dptr_phiZ[disparity][id] = dphiZ
+					- tex3D(texRefDataTerm, globalIdx_XY.x, globalIdx_XY.y, disparity);
 		}
 	}
 }

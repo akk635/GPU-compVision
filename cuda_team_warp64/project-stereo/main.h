@@ -8,6 +8,6 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
-uint32_t disparities;
+extern uint32_t disparities;
 
 #endif /* MAIN_H_ */

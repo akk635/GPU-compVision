@@ -39,6 +39,11 @@ __device__ size_t localIdx_XY() {
 }
 
 
+__device__ size_t linearize_threadIdx(dim3 threadId, dim3 dims) {
+	return (size_t) threadId.z * dims.x * dims.y + (size_t) threadId.y * dims.x + threadId.x;
+}
+
+
 __device__ size_t linearize_globalIdx(uint32_t w, uint32_t h, dim3 globalIdx) {
  	return (size_t) (globalIdx.z * w * h) + (size_t) (globalIdx.y * w) + globalIdx.x;
 }

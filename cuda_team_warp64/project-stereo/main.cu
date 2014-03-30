@@ -195,10 +195,11 @@ int main(int argc, char **argv) {
 	cout << "mu : " << mu << endl;
 
 	// get disparities
-	disparities = 90;
+	uint32_t disparities = 90;
 	getParam("disparities", disparities, argc, argv);
 	cout << "disparities : " << disparities << endl;
 
+	float *h_f = new float[(size_t) w * h * disparities];
 	// output parameters
 	cout << "Steps: " << steps << endl;
 	cout << "width " << w << endl;
@@ -208,7 +209,7 @@ int main(int argc, char **argv) {
 
 	// GPU version
 	disparity_computation_caller(imgInleft, imgInright, imgOut, dim3(w, h, 0),
-			nc, ncOut, sigma, tau, steps, mu, disparities);
+			nc, ncOut, sigma, tau, steps, mu, disparities, h_f);
 
 	timer.end();
 
@@ -248,6 +249,7 @@ int main(int argc, char **argv) {
 	delete[] imgInleft;
 	delete[] imgInright;
 	delete[] imgOut;
+	delete[] h_f;
 
 	// close all opencv windows
 	cvDestroyAllWindows();

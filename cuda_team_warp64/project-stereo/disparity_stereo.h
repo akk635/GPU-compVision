@@ -9,20 +9,20 @@
 #define DISPARITY_STEREO_H_
 #include <iostream>
 #include <aux.h>
-#include "main.h"
 
 void disparity_computation_caller(float *h_imgInleft, float *h_imgInright,
 		float *h_imgOut, dim3 imgDims, uint32_t nc, uint32_t ncOut, float sigma,
-		float tau, uint32_t steps, uint32_t mu, uint32_t disparities);
+		float tau, uint32_t steps, uint32_t mu, uint32_t disparities, float *h_f);
 
 texture<float, 2, cudaReadModeElementType> texRefleftImage;
 texture<float, 2, cudaReadModeElementType> texRefrightImage;
+texture<float, 3, cudaReadModeElementType> texRefDataTerm;
 
-__global__ void initialize(float **d_f, float *d_imgInleft, float *d_imgInright,
+__global__ void initialize(float *d_f, float *d_imgInleft, float *d_imgInright,
 		uint32_t nc, dim3 imgDims, float **d_imgOutOld, float **d_imgOutFit,
 		uint32_t disparities, uint32_t mu);
 
-__global__ void initialize_tm(float **d_f, uint32_t nc, dim3 imgDims,
+__global__ void initialize_tm(float *d_f, uint32_t nc, dim3 imgDims,
 		float **d_imgOutOld, float **d_imgOutFit, uint32_t disparities,
 		uint32_t mu);
 
@@ -35,8 +35,12 @@ __device__ void gradient_imgFd(float *dphiX, float *dphiY, float *dphiZ,
 		dim3 globalIdx_XY, dim3 imgDims);
 
 __global__ void regularizer_update(float **dptr_phiX, float **dptr_phiY,
-		float **dptr_phiZ, float **dptr_imgOutFit, float **dptr_f, float sigma,
+		float **dptr_phiZ, float **dptr_imgOutFit, float *d_f, float sigma,
 		dim3 imgDims, uint32_t disparities);
+
+__global__ void regularizer_update_tm(float **dptr_phiX, float **dptr_phiY,
+		float **dptr_phiZ, float **dptr_imgOutFit, float sigma, dim3 imgDims,
+		uint32_t disparities);
 
 __global__ void variational_update(float **dptr_imgOutNew,
 		float **dptr_imgOutOld, float **dptr_phiX, float **dptr_phiY,

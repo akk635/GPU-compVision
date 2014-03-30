@@ -17,7 +17,7 @@ INCLUDES_CU = -I../../libs/global_idx -I../../libs/co_ordinates
 NVCC = nvcc
 
 ################# main
-all: lib.o stereo_projection.o main.cu Makefile
+all: stereo_projection.o lib.o stereo_projection_gui
 	$(NVCC) $(INCLUDES) -o main main.cu $(LIBAUX) stereo_projection.o $(NVCCFLAGS_MAIN)
 
 ################# dependencies
@@ -27,6 +27,13 @@ stereo_projection.o: stereo_projection.cu
 lib.o:
 	cd $(LIBBASE); make all;
 
+stereo_projection_gui:
+	cd stereo_projection_gui;
+	qmake widget.pro CONFIG+=static;
+	make -f Makefile;
+	cp widget ../widget;
+
 ################# clean
 clean:
-	rm *.o main
+	rm *.o main;
+	cd stereo_projection_gui; make clean;
