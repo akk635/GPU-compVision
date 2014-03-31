@@ -11,7 +11,7 @@
 #include <aux.h>
 // FIX
 #include <global_idx.h>
-
+#include <global_idx.cu>
 #include <iostream>
 
 
