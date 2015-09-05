@@ -126,7 +126,6 @@ __global__ void SOR_update(float *d_imgOld, float *d_imgJacobied, float *d_imgOu
 	 // get global idx in XY plane
     dim3 globalIdx_XY = globalIdx_Dim2();
 
-
     // only threads inside image boundary computes
     if (globalIdx_XY.x < imgDims.x && globalIdx_XY.y < imgDims.y) {
         // get linear index
@@ -138,8 +137,8 @@ __global__ void SOR_update(float *d_imgOld, float *d_imgJacobied, float *d_imgOu
             size_t chOffset = (size_t) imgDims.x * imgDims.y * ch_i;
 
             // extrapolate
-            float jacobiedUpdate = d_imgJacobied[id + chOffset];
-            d_imgOut[id + chOffset] = jacobiedUpdate + THETA * (jacobiedUpdate - d_imgOld[id + chOffset]);
+            float jacobiUpdate = d_imgJacobied[id + chOffset];
+            d_imgOut[id + chOffset] = jacobiUpdate + THETA * (jacobiUpdate - d_imgOld[id + chOffset]);
         }
     }
 }

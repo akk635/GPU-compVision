@@ -1,0 +1,1 @@
+./main -i ../../images/in/lake_inprint.png -lambda 0.2 -epsilon 0.01 -steps 20 -diffusivity_type 1 -theta 0.8
